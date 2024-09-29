@@ -3,6 +3,7 @@ title: Package exports
 sort: 25
 contributors:
   - sokra
+  - Erchiusx
 related:
   - title: Package entry points in Node.js
     url: https://nodejs.org/api/packages.html#packages_package_entry_points
@@ -13,19 +14,26 @@ which module should be used when using module requests like `import "package"` o
 It replaces the default implementation that returns `main` field resp. `index.js` files for `"package"` and
 the file system lookup for `"package/sub/path"`.
 
-When the `exports` field is specified, only these module requests are available.
-Any other requests will lead to a ModuleNotFound Error.
+一个包的`package.json`文件中的`exports`键声明了
+在通过类似于`import "package"`或`import "package/sub/path"`的方式请求导入模块时，它应使用哪些内容。
+它将取代如下几项默认的行为：
+1. 对于请求`"package"`，尝试返回包的`main`字段；如果不存在，则查询文件夹下的`index.js`；
+2. 对于请求`"package/sub/path"`，对其进行进一步的文件系统查询。
 
-## General syntax
+当`exports`字段存在时，只能请求这些被声明的模块。
+任何其它模块查询请求均会导致`ModuleNotFound`错误。
 
-In general the `exports` field should contain an object
-where each properties specifies a sub path of the module request.
-For the examples above the following properties could be used:
-`"."` for `import "package"` and `"./sub/path"` for `import "package/sub/path"`.
-Properties ending with a `/` will forward a request with this prefix to the old file system lookup algorithm.
-For properties ending with `*`, `*` may take any value and any `*` in the property value is replaced with the taken value.
+## 语法概述
 
-An example:
+一般而言，`exports`属性应当包含一个对象，
+其每一个字段声明了一个对应于模块请求的子路径。
+对于以上的例子，应当使用这些键：
+1. 用`"."`键声明`import "package"`的结果；
+2. 用`"./sub/path"`键声明`import "package/sub/path"`的结果。
+以`/`结尾的属性值将会使请求被转发为一个以此路径为前缀的，使用旧有的文件系统查询算法的请求。
+对于以`*`结尾的键，`*`能取任何值，且对应的属性值中的`*`会被相应地替换。
+
+示例如下：
 
 ```json
 {
@@ -39,7 +47,7 @@ An example:
 }
 ```
 
-| Module request                      | Result                                           |
+| 请求                                | 结果                                             |
 | ----------------------------------- | ------------------------------------------------ |
 | `package`                           | `.../package/main.js`                            |
 | `package/sub/path`                  | `.../package/secondary.js`                       |
@@ -48,14 +56,14 @@ An example:
 | `package/other-prefix/deep/file.js` | `.../package/yet-another/deep/file/deep/file.js` |
 | `package/main.js`                   | Error                                            |
 
-## Alternatives
+## 可选语法
 
-Instead of providing a single result, the package author may provide a list of results.
-In such a scenario this list is tried in order and the first valid result will be used.
+除了提供单一的结果，包作者也可以提供一列结果。
+在这种情况下，会依次尝试导入它们，并使用第一个有效的结果。
 
-Note: Only the first valid result will be used, not all valid results.
+注：仅会使用第一个有效的结果，而非所有的。
 
-Example:
+示例如下：
 
 ```json
 {
@@ -65,21 +73,21 @@ Example:
 }
 ```
 
-Here `package/things/apple` might be found in `.../package/good-things/apple` or in `.../package/bad-things/apple`.
+此时，`package/things/apple`的可能会被解析为`.../package/good-things/apple`或`.../package/bad-things/apple`.
 
-## Conditional syntax
+## 有限定条件的语法
 
-Instead of providing results directly in the `exports` field,
-the package author may let the module system choose one based on conditions about the environment.
+除了直接以`exports`键给出结果，
+包作者还可以让模块系统基于环境的信息选择一个结果。
 
-In this case an object mapping conditions to results should be used.
-Conditions are tried in object order.
-Conditions that contain invalid results are skipped.
-Conditions might be nested to create a logical AND.
-The last condition in the object might be the special `"default"` condition,
-which is always matched.
+在这种情况下，应当使用一个对象，将条件映射为结果。
+这些条件将会被按照其在映射对象中出现的顺序被依次尝试；
+包含无效结果的条件会被略过；
+要创建一个“和”的逻辑，应当嵌套这些条件。
+特别地，最后一个条件可以是特殊的`"default"`条件，
+它永远都会被匹配。
 
-Example:
+示例如下：
 
 ```json
 {
@@ -97,7 +105,7 @@ Example:
 }
 ```
 
-This translates to something like:
+这可以近似地被翻译为：
 
 ```ts
 if (red && valid('./stop.js')) return './stop.js';
@@ -110,11 +118,11 @@ if (valid('./drive-carefully.js')) return './drive-carefully.js';
 throw new ModuleNotFoundError();
 ```
 
-The available conditions vary depending on the module system and tool used.
+可使用的条件高度依模块系统和工具而变化。
 
-## Abbreviation
+## 简略写法
 
-When only a single entry (`"."`) into the package should be supported the `{ ".": ... }` object nesting can be omitted:
+当该包仅支持一个`"."`键时，`{".": ... }`的对象嵌套可以被省略：
 
 ```json
 {
@@ -131,19 +139,19 @@ When only a single entry (`"."`) into the package should be supported the `{ "."
 }
 ```
 
-## Notes about ordering
+## 关于顺序的附注
 
-In an object where each key is a condition, order of properties is significant. Conditions are handled in the order they are specified.
+在每一个键都是条件的对象中，属性的顺序非常重要。条件按它们的出现顺序被处理。
 
-Example: `{ "red": "./stop.js", "green": "./drive.js" }` != `{ "green": "./drive.js", "red": "./stop.js" }` (when both `red` and `green` conditions are set, first property will be used)
+例如: `{ "red": "./stop.js", "green": "./drive.js" }` != `{ "green": "./drive.js", "red": "./stop.js" }` (当 `red` and `green` 均成立时, 会使用第一个出现的键)
 
-In an object where each key is a subpath, order of properties (subpaths) is not significant. More specific paths are preferred over less specific ones.
+在每一个键都是子路径时，属性（这些子路径）的出现顺序不重要。更详细的路径会比更简短的路径更优先地匹配。
 
-Example: `{ "./a/": "./x/", "./a/b/": "./y/", "./a/b/c": "./z" }` == `{ "./a/b/c": "./z", "./a/b/": "./y/", "./a/": "./x/" }` (order will always be: `./a/b/c` > `./a/b/` > `./a/`)
+例如: `{ "./a/": "./x/", "./a/b/": "./y/", "./a/b/c": "./z" }` == `{ "./a/b/c": "./z", "./a/b/": "./y/", "./a/": "./x/" }` (永远按照 `./a/b/c` > `./a/b/` > `./a/` 的顺序)
 
-`exports` field is preferred over other package entry fields like `main`, `module`, `browser` or custom ones.
+`exports` 键永远比 `main`, `module`, `browser` 和其它自定义的键更优先.
 
-## Support
+## 支持情况
 
 | Feature                                | Supported by                                                                       |
 | -------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -162,62 +170,62 @@ Example: `{ "./a/": "./x/", "./a/b/": "./y/", "./a/b/c": "./z" }` == `{ "./a/b/c
 | Error when not mapped                  | Node.js, webpack, rollup, esinstall, wmr<sup>(7)</sup>                             |
 | Error when mixing conditions and paths | Node.js, webpack, rollup                                                           |
 
-(1) deprecated in Node.js, `*` should be preferred.
+(1) 已在 Node.js 中废弃, 优先考虑 `*`.
 
-(2) `"./"` is intentionally ignored as key.
+(2) `"./"` 这一键被有意地忽略了.
 
-(3) The property value is ignored and property key is used as target. Effectively only allowing mappings with key and value are identical.
+(3) 属性值被忽略了，而键被用作目标。 高效，但当且仅当键和值都互不相同时。
 
-(4) The syntax is supported, but always the first entry is used, which makes it unusable for any practical use case.
+(4) 这一语法受到了支持，但永远仅使用第一个结果，因而不具有任何实际使用空间。
 
-(5) Fallback to alternative sibling parent conditions is handling incorrectly.
+(5) 向同级和父级其它选项的回退的处理不正确。
 
-(6) For the `require` condition object order is handled incorrectly. This is intentionally as wmr doesn't differ between referencing syntax.
+(6) 在使用`require`时，对象的顺序没有被正确处理。这是一个有意的设计，因为在wmr中，不同的引用语法不被区分。
 
-(7) When using `"exports": "./file.js"` abbreviation, any request e. g. `package/not-existing` will resolve to that. When not using the abbreviation, direct file access e. g. `package/file.js` will not lead to an error.
+(7) 在使用 `"exports": "./file.js"` 变种时，任何请求（以 `package/not-existing`为例）都会被解析为那一结果（"./file.js"）。当不使用这一变种时，直接请求特定文件（例如 `package/file.js`）不会导致错误.
 
-## Conditions
+## 条件限定
 
-### Reference syntax
+### 引用语法
 
-One of these conditions is set depending on the syntax used to reference the module:
+取决于引用模块的语法，这些条件之一成立：
 
-| Condition | Description                                                       | Supported by                                                         |
+| 条件      | 描述                                                               | 支持                                                                 |
 | --------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `import`  | Request is issued from ESM syntax or similar.                     | Node.js, webpack, rollup, esinstall<sup>(1)</sup>, wmr<sup>(1)</sup> |
-| `require` | Request is issued from CommonJs/AMD syntax or similar.            | Node.js, webpack, rollup, esinstall<sup>(1)</sup>, wmr<sup>(1)</sup> |
-| `style`   | Request is issued from a stylesheet reference.                    |
-| `sass`    | Request is issued from a sass stylesheet reference.               |
-| `asset`   | Request is issued from a asset reference.                         |
-| `script`  | Request is issued from a normal script tag without module system. |
+| `import`  | 以ESM或相似形式请求                                                | Node.js, webpack, rollup, esinstall<sup>(1)</sup>, wmr<sup>(1)</sup> |
+| `require` | 以CommonJs/AMD或相似形式请求                                       | Node.js, webpack, rollup, esinstall<sup>(1)</sup>, wmr<sup>(1)</sup> |
+| `style`   | 以样式表形式请求                                                   |
+| `sass`    | 以sass样式表形式请求                                               |
+| `asset`   | 以资源模块形式请求                                                 |
+| `script`  | 以不涉及模块系统的脚本加载方式请求                                  |
 
-These conditions might also be set additionally:
+另外，这些条件之一也可能成立:
 
-| Condition   | Description                                                                                                         | Supported by         |
+| 条件        | 描述                                                                                                                | 支持                  |
 | ----------- | ------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `module`    | All module syntax that allows to reference javascript supports ESM.<br />(only combined with `import` or `require`) | webpack, rollup, wmr |
-| `esmodules` | Always set by supported tools.                                                                                      | wmr                  |
-| `types`     | Request is issued from typescript that is interested in type declarations.                                          |
+| `module`    | 当所有对JavaScript的请求都支持ESM时成立<br />(只有结合使用 `import` 和 `require` 时)                                  | webpack, rollup, wmr |
+| `esmodules` | 对支持ESM的工具永远成立                                                                                              | wmr                  |
+| `types`     | 由typescript发起的，在乎类型的请求                                                                                   |
 
-(1) `import` and `require` are both set independent of referencing syntax. `require` has always lower priority.
+(1) `import` 和 `require` 依引用的语法而成立；`require`优先级总是较低。
 
 #### import
 
-The following syntax will set the `import` condition:
+如下语法使 `import` 条件成立:
 
-- ESM `import` declarations in ESM
-- JS `import()` expression
-- HTML `<script type="module">` in HTML
-- HTML `<link rel="preload/prefetch">` in HTML
-- JS `new Worker(..., { type: "module" })`
-- WASM `import` section
-- ESM HMR (webpack) `import.hot.accept/decline([...])`
-- JS `Worklet.addModule`
-- Using javascript as entrypoint
+- ESM 中的 ESM import 声明
+- JS 中的 import() 表达式
+- HTML 中的 <script type="module">
+- HTML 中的 <link rel="preload/prefetch">
+- JS 中的 new Worker(..., { type: "module" })
+- WASM 中的 import 部分
+- ESM HMR（webpack）中的 import.hot.accept/decline([...])
+- JS 中的 Worklet.addModule
+- 使用 JavaScript 作为入口点
 
 #### require
 
-The following syntax will set the `require` condition:
+如下语法使 `require` 条件成立:
 
 - CommonJs `require(...)`
 - AMD `define()`
@@ -230,14 +238,14 @@ The following syntax will set the `require` condition:
 
 #### style
 
-The following syntax will set the `style` condition:
+如下语法使 `style` 条件成立:
 
 - CSS `@import`
 - HTML `<link rel="stylesheet">`
 
 #### asset
 
-The following syntax will set the `asset` condition:
+如下语法使 `asset` 条件成立:
 
 - CSS `url()`
 - ESM `new URL(..., import.meta.url)`
@@ -245,68 +253,67 @@ The following syntax will set the `asset` condition:
 
 #### script
 
-The following syntax will set the `script` condition:
+如下语法使 `script` 条件成立:
 
 - HTML `<script src="...">`
 
-`script` should only be set when no module system is supported.
-When the script is preprocessed by a system supporting CommonJs
-it should set `require` instead.
+`script` 应当仅在没有模块系统存在时成立。
+当脚本被支持CommonJs的系统处理时，
+应该为设置 `require` 成立.
 
-This condition should be used when looking for a javascript file that can be injected
-as script tag in a HTML page without additional preprocessing.
+这一条件仅应在寻找能作为标签直接嵌入HTML页面而不需要额外处理时设为成立。
 
-### Optimizations
+### 优化
 
-The following conditions are set for various optimizations:
+如下条件为了各类优化而设置:
 
-| Condition     | Description                                                         | Supported by |
+| 条件          | 描述                                                                | 支持          |
 | ------------- | ------------------------------------------------------------------- | ------------ |
-| `production`  | In a production environment.<br />No devtooling should be included. | webpack      |
-| `development` | In a development environment.<br />Devtooling should be included.   | webpack      |
+| `production`  | 生产环境。<br />不应包含任何devtool                                  | webpack      |
+| `development` | 开发环境。<br />应包含devtool                                        | webpack      |
 
-Note: Since `production` and `development` is not supported by everyone, no assumption should be made when none of these is set.
+注: 由于并非所有人都支持 `production` 和 `development` ，没有任何一个成立时不应做出任何相关假设。
 
-### Target environment
+### 目标环境
 
-The following conditions are set depending on the target environment:
+如下条件依目标环境而设置:
 
-| Condition      | Description                                   | Supported by                        |
+| 条件           | 描述                                          | 支持                                 |
 | -------------- | --------------------------------------------- | ----------------------------------- |
-| `browser`      | Code will run in a browser.                   | webpack, esinstall, wmr             |
-| `electron`     | Code will run in electron.<sup>(1)</sup>      | webpack                             |
-| `worker`       | Code will run in a (Web)Worker.<sup>(1)</sup> | webpack                             |
-| `worklet`      | Code will run in a Worklet.<sup>(1)</sup>     |                                     |
-| `node`         | Code will run in Node.js.                     | Node.js, webpack, wmr<sup>(2)</sup> |
-| `deno`         | Code will run in Deno.                        |                                     |
-| `react-native` | Code will run in react-native.                |                                     |
+| `browser`      | 代码会在浏览器环境中执行                       | webpack, esinstall, wmr             |
+| `electron`     | 代码会在electron中执行<sup>(1)</sup>           | webpack                             |
+| `worker`       | 代码会在(Web)Worker中执行<sup>(1)</sup>        | webpack                             |
+| `worklet`      | 代码会在Worklet中执行<sup>(1)</sup>            |                                     |
+| `node`         | 代码会证node环境中执行                         | Node.js, webpack, wmr<sup>(2)</sup> |
+| `deno`         | 代码会在deno环境中执行                         |                                     |
+| `react-native` | 代码会在react-native中执行                     |                                     |
 
-(1) `electron`, `worker` and `worklet` comes combined with either `node` or `browser`, depending on the context.
+(1) `electron`, `worker` 和 `worklet` 应与 `node` 或 `browser`一同出现，具体取决于上下文。
 
-(2) This is set for browser target environment.
+(2) 此处为浏览器支持而设置。
 
-Since there are multiple versions of each environment the following guidelines apply:
+由于每个环境具有若干版本，应按如下规则设置条件：
 
-- `node`: See `engines` field for compatibility.
-- `browser`: Compatible with current Spec and stage 4 proposals at time of publishing the package. Polyfilling resp. transpiling must be handled on consumer side.
-  - Features that are not possible to polyfill or transpile should be used carefully as it limits the possible usage.
+- `node`: 查阅 `engines` 键以了解其支持。
+- `browser`: 与包发布时间的 Spec 和 stage 4 提案一致。Polyfill或转译必须在用户端处理。
+  - 无法转译或polyfill的规则应当慎用，因为它限制了可能的使用环境。
 - `deno`: TBD
 - `react-native`: TBD
 
-### Conditions: Preprocessor and runtimes
+### 预处理和运行时条件
 
-The following conditions are set depending on which tool preprocesses the source code.
+依预处理工具，如下条件被设置：
 
-| Condition | Description           | Supported by |
+| 条件      | 描述                   |  支持        |
 | --------- | --------------------- | ------------ |
 | `webpack` | Processed by webpack. | webpack      |
 
 Sadly there is no `node-js` condition for Node.js as runtime.
 This would simplify creating exceptions for Node.js.
 
-### Conditions: Custom
+### 自动逸条件
 
-The following tools support custom conditions:
+以下工具支持自定义条件:
 
 | Tool      | Supported | Notes                                                                                                    |
 | --------- | --------- | -------------------------------------------------------------------------------------------------------- |
@@ -316,13 +323,13 @@ The following tools support custom conditions:
 | esinstall | no        |
 | wmr       | no        |
 
-For custom conditions the following naming schema is recommended:
+对于自定义条件，推荐如下命名规则:
 
 `<company-name>:<condition-name>`
 
-Examples: `example-corp:beta`, `google:internal`.
+示例: `example-corp:beta`, `google:internal`.
 
-## Common patterns
+## 模式
 
 All patterns are explained with a single `"."` entry into the package, but they can be extended from multiple entries too, by repeating the pattern for each entry.
 
